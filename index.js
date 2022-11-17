@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion } = require('mongodb');
+
+const jwt = require('jsonwebtoken');
+const { query } = require('express');
 require('dotenv').config();
 
 const port = process.env.PORT || 5000;
@@ -22,12 +25,30 @@ async function run() {
         const appointmentOptionCollection = client.db('doctorsPortal').collection('appointmentOptions');
 
         const bookingsCollection = client.db('doctorsPortal').collection('bookings');
+        const usersCollection = client.db('doctorsPortal').collection('users');
+
+        function verifyJWT(req, res, next) {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) {
+                return res.status(401).send('unauthorized access');
+            }
+
+            const token = authHeader.split(' ')[1];
+
+            jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
+                if (err) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
+                req.decoded = decoded;
+                next();
+            })
+        }
 
         // Use aggregate to query multiple collection and then merge data
 
         app.get('/getAppointmentOptions', async (req, res) => {
             const date = req.query.date;
-            console.log(date);
+            // console.log(date);
             const query = {};
             const options = await appointmentOptionCollection.find(query).toArray();
 
@@ -45,6 +66,52 @@ async function run() {
                 option.slots = remainingSlots;
             })
             res.send(options);
+
+            // app.get('/v2/getAppointmentOptions', async (req, res) => {
+            //     const date = req.query.date;
+            //     const options = await appointmentOptionCollection.aggregate([
+            //         {
+            //             $lookup: {
+            //                 from: 'bookings',
+            //                 localField: 'name',
+            //                 foreignField: 'treatment',
+            //                 pipeline: [
+            //                     {
+            //                         $match: {
+            //                             $expr: {
+            //                                 $eq: ['$apointmentDate', date]
+            //                             }
+            //                         }
+            //                     }
+            //                 ],
+            //                 as: 'booked'
+            //             }
+            //         },
+            //         {
+            //             $project: {
+            //                 name: 1,
+            //                 slots: 1,
+            //                 booked: {
+            //                     $map: {
+            //                         input: '$booked',
+            //                         as: 'book',
+            //                         in: '$book.slot'
+            //                     }
+            //                 }
+            //             }
+            //         },
+            //         {
+            //             $project: {
+            //                 name: 1,
+            //                 slots: {
+            //                     $setDifference: ['$slots', '$booked']
+            //                 }
+            //             }
+            //         }
+            //     ]).toArray();
+            //     res.send(options);
+            // })
+
         })
 
         // ***
@@ -57,11 +124,68 @@ async function run() {
         // app.delete('/bookings/:id')
         // ***
 
+        app.get('/bookings', verifyJWT, async (req, res) => {
+            const email = req.query.email;
+            const decodedEmail = req.decoded.email;
+
+            if (email !== decodedEmail) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            const query = { email: email };
+            const bookings = await bookingsCollection.find(query).toArray();
+            res.send(bookings);
+        })
+
         app.post('/bookings', async (req, res) => {
-            const booking = req.body
+            const booking = req.body;
+            console.log(booking);
+            const query = {
+                appointmentDate: booking.appointmentDate,
+                email: booking.email,
+                treatment: booking.treatment
+            }
+
+            const alreadyBooked = await bookingsCollection.find(query).toArray();
+
+            if (alreadyBooked.length) {
+                const message = `You already have an appointment of ${booking.appointmentDate} `
+                return res.send({ acknowledge: false, message })
+            }
             const result = await bookingsCollection.insertOne(booking);
             res.send(result);
         })
+
+
+
+        app.get('/jwt', async (req, res) => {
+            const email = req.query.email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            if (user) {
+                const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, { expiresIn: '1h' })
+                return res.send({ accessToken: token });
+            }
+            console.log(user);
+            res.status(403).send({ accessToken: 'PEEKABOOOOOOOOOOOOOOOOOOOOOOO!' });
+        })
+
+
+
+        app.get('/users', async (req, res) => {
+            const query = {};
+            const users = await usersCollection.find(query).toArray();
+            res.send(users);
+        })
+
+
+
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            const result = await usersCollection.insertOne(user);
+            res.send(result);
+        })
+
     }
 
     finally {
