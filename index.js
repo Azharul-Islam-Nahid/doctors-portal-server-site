@@ -16,7 +16,7 @@ const app = express();
 // app.use(cors())
 // validating site access for database
 app.use(cors({
-    origin: 'https://doctors-portal-eb439.web.app/',
+    origin: 'https://doctors-portal-eb439.web.app',
     optionsSuccessStatus: 200,
 }));
 app.use(express.json())
