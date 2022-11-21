@@ -13,7 +13,12 @@ const port = process.env.PORT || 5000;
 const app = express();
 
 // middleware
-app.use(cors())
+// app.use(cors())
+// validating site access for database
+app.use(cors({
+    origin: 'https://doctors-portal-eb439.web.app/',
+    optionsSuccessStatus: 200,
+}));
 app.use(express.json())
 
 
